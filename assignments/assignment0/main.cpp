@@ -8,6 +8,7 @@
 #include <ew/transform.h>
 #include <ew/cameraController.h>
 #include <ew/texture.h>
+#include <ew/procGen.h>
 
 #include <GLFW/glfw3.h>
 #include <imgui.h>
@@ -21,7 +22,20 @@ struct Material {
 	float Kd = 0.5;
 	float Ks = 0.5;
 	float Shininess = 128;
-}material;
+};
+Material material;
+
+struct Light {
+	
+	glm::vec3 direction;
+
+	float ambient;
+	float diffuse;
+	float specular;
+};
+Light directionalLight;
+
+
 
 
 void framebufferSizeCallback(GLFWwindow* window, int width, int height);
@@ -37,23 +51,51 @@ ew::Camera camera;
 ew::CameraController cameraController;
 int shaderToUse = 0;
 
+// Post Processing
 unsigned int framebuffer;
 unsigned int textureColorbuffer;
 unsigned int rbo;
 unsigned int vao;
 
+// Shadow Mapping
+unsigned int depthMapFBO;
+const unsigned int SHADOW_WIDTH = 1024, SHADOW_HEIGHT = 1024;
+unsigned int depthMap;
+
+
 
 int main() {
 	GLFWwindow* window = initWindow("Assignment 0", screenWidth, screenHeight);
+	
+	// Shaders
 	ew::Shader shader = ew::Shader("assets/lit.vert", "assets/lit.frag");
 	ew::Shader postProcessShaderNormal = ew::Shader("assets/buffer.vert", "assets/buffer.frag");
 	ew::Shader postProcessInvertedShader = ew::Shader("assets/buffer.vert", "assets/invertedBuffer.frag");
 	ew::Shader postProcessBlurShader = ew::Shader("assets/buffer.vert", "assets/blurBuffer.frag");
+	ew::Shader simpleDepthShader = ew::Shader("assets/simpleDepthShader.vert", "assets/simpleDepthShader.frag");
+
+	// Model and Meshes
 	ew::Model monkeyModel = ew::Model("assets/suzanne.obj");
+	ew::Mesh planeMesh = ew::createPlane(10,10,10);
+
+	// Textures
 	GLuint brickTexture = ew::loadTexture("assets/brick_color.jpg");
+
+	// Declaring variables
 	ew::Transform monkeyTransform;
+	ew::Transform planeTransform;
 	glfwSetFramebufferSizeCallback(window, framebufferSizeCallback);
 
+	//Initializing Variables
+	planeTransform.position = glm::vec3(0, -2, 0);
+
+	// Lighting
+	directionalLight.ambient = 0.5f;
+	directionalLight.diffuse = 0.5f;
+	directionalLight.specular = 0.5f;
+	directionalLight.direction = glm::vec3(0, 1, 0);
+
+	// Post Processing
 	glGenFramebuffers(1, &framebuffer);
 	glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
 
@@ -79,19 +121,29 @@ int main() {
 
 	glCreateVertexArrays(1, &vao);
 
-	
-	
+	// SHADOWMAPPING
+	glGenFramebuffers(1, &depthMapFBO);
 
+	// Depth buffer
+	glGenTextures(1, &depthMap);
+	glBindTexture(GL_TEXTURE_2D, depthMap);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT,
+		SHADOW_WIDTH, SHADOW_HEIGHT, 0, GL_DEPTH_COMPONENT, GL_FLOAT, NULL);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+	// Binding
+	glBindFramebuffer(GL_FRAMEBUFFER, depthMapFBO);
+	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, depthMap, 0);
+	glDrawBuffer(GL_NONE);
+	glReadBuffer(GL_NONE);
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+	
+	// Resetting
 	glActiveTexture(GL_TEXTURE0);
 	glBindTexture(GL_TEXTURE_2D, brickTexture);
 	
-	shader.use();
-	shader.setInt("_MainTex", 0);
-	shader.setVec3("_EyePos", camera.position);
-	shader.setFloat("_Material.Ka", material.Ka);
-	shader.setFloat("_Material.Kd", material.Kd);
-	shader.setFloat("_Material.Ks", material.Ks);
-	shader.setFloat("_Material.Shininess", material.Shininess);
 	
 	camera.position = glm::vec3(0.0f, 0.0f, 5.0f);
 	camera.target = glm::vec3(0.0f, 0.0f, 0.0f); //Look at the center of the scene
@@ -110,12 +162,40 @@ int main() {
 		deltaTime = time - prevFrameTime;
 		prevFrameTime = time;
 
-		//RENDER
+
+		// SHADOW PASS
+		/*ConfigureShaderAndMatrices();
+		RenderScene();*/
+		float near_plane = 1.0f, far_plane = 7.5f;
+		glm::mat4 lightProjection = glm::ortho(-10.0f, 10.0f, -10.0f, 10.0f, near_plane, far_plane);
+		glm::mat4 lightView = glm::lookAt(glm::vec3(directionalLight.direction),
+			glm::vec3(0.0f, 0.0f, 0.0f),
+			glm::vec3(0.0f, 1.0f, 0.0f));
+		glm::mat4 lightSpaceMatrix = lightProjection * lightView;
+
+		// TODO :: Finish up here with the shadow pass
+		   
+
+		// RENDER PASS
+		glViewport(0, 0, screenWidth, screenHeight);
 		glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
 		glClearColor(0.6f, 0.8f, 0.92f, 1.0f);
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 		
+		// Lighting
+		glm::vec3 lightDirection = normalize(-directionalLight.direction);
+
+		// Shader
 		shader.use();
+		shader.setInt("_MainTex", 0);
+		shader.setVec3("_EyePos", camera.position);
+		shader.setFloat("_Material.Ka", material.Ka);
+		shader.setFloat("_Material.Kd", material.Kd);
+		shader.setFloat("_Material.Ks", material.Ks);
+		shader.setFloat("_Material.Shininess", material.Shininess);
+		shader.setVec3("_LightDirection", lightDirection);
+
+		// Models
 		glBindTexture(GL_TEXTURE_2D, brickTexture);
 		monkeyTransform.rotation = glm::rotate(monkeyTransform.rotation, deltaTime, glm::vec3(0.0, 1.0, 0.0));
 		shader.setMat4("_Model", monkeyTransform.modelMatrix());
@@ -123,11 +203,17 @@ int main() {
 		shader.setMat4("_ViewProjection", camera.projectionMatrix() * camera.viewMatrix());
 		monkeyModel.draw(); //Draws monkey model using current shader
 
+		shader.setMat4("_Model", planeTransform.modelMatrix());
+		shader.setMat4("_ViewProjection", camera.projectionMatrix() * camera.viewMatrix());
+		planeMesh.draw(); // Drawing the plane
+		
+
+
 		
 
 		glfwSwapBuffers(window);
 
-
+		// POST PROCESS PASS
 		glBindFramebuffer(GL_FRAMEBUFFER, 0);
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 		switch (shaderToUse)
@@ -148,6 +234,7 @@ int main() {
 		glDrawArrays(GL_TRIANGLES, 0, 6); //6 for quad, 3 for triangle
 
 		drawUI();
+		//std::cout << directionalLight.direction.x << ", " << directionalLight.direction.y << ", " << directionalLight.direction.z << std::endl;
 	}
 	printf("Shutting down...");
 }
@@ -186,9 +273,35 @@ void drawUI() {
 			shaderToUse = 2;
 		}
 	}
+	if (ImGui::CollapsingHeader("Light Controls")) {
+		if (ImGui::CollapsingHeader("Light Direction")) {
+			ImGui::SliderFloat("X component", &directionalLight.direction.x, -1.0f, 1.0f);
+			ImGui::SliderFloat("Y component", &directionalLight.direction.y, -1.0f, 1.0f);
+			ImGui::SliderFloat("Z component", &directionalLight.direction.z, -1.0f, 1.0f);
+		}
+		/*if (ImGui::CollapsingHeader("Light Data")) {
+			ImGui::SliderFloat("Ambient", &directionalLight.ambient, 0.0f, 1.0f);
+			ImGui::SliderFloat("Diffuse", &directionalLight.diffuse, 0.0f, 1.0f);
+			ImGui::SliderFloat("Specular", &directionalLight.specular, 0.0f, 1.0f);
+		}*/
+	}
+	
+
 
 	ImGui::Text("Add Controls Here!");
 	ImGui::End();
+
+	ImGui::Begin("Shadow Map");
+	//Using a Child allow to fill all the space of the window.
+	ImGui::BeginChild("Shadow Map");
+	//Stretch image to be window size
+	ImVec2 windowSize = ImGui::GetWindowSize();
+	//Invert 0-1 V to flip vertically for ImGui display
+	//shadowMap is the texture2D handle
+	//ImGui::Image((ImTextureID)shadowMap, windowSize, ImVec2(0, 1), ImVec2(1, 0));
+	ImGui::EndChild();
+	ImGui::End();
+
 
 	ImGui::Render();
 	ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
