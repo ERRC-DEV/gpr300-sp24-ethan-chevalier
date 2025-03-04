@@ -15,6 +15,9 @@
 #include <imgui_impl_glfw.h>
 #include <imgui_impl_opengl3.h>
 
+#include "Classes/Animator.h"
+#include "Classes/AnimationClip.h"
+
 #include <iostream>
 
 struct Material {
@@ -62,21 +65,29 @@ unsigned int depthMapFBO;
 const unsigned int SHADOW_WIDTH = 1024, SHADOW_HEIGHT = 1024;
 unsigned int depthMap;
 
+unsigned int theDepthShaderToQuery;
+float bias = 0.1;
+
+// Animation
+ec::Animator animator;
+ec::AnimationClip theClip;
 
 
 int main() {
 	GLFWwindow* window = initWindow("Assignment 0", screenWidth, screenHeight);
-	
+
 	// Shaders
 	ew::Shader shader = ew::Shader("assets/lit.vert", "assets/lit.frag");
 	ew::Shader postProcessShaderNormal = ew::Shader("assets/buffer.vert", "assets/buffer.frag");
 	ew::Shader postProcessInvertedShader = ew::Shader("assets/buffer.vert", "assets/invertedBuffer.frag");
 	ew::Shader postProcessBlurShader = ew::Shader("assets/buffer.vert", "assets/blurBuffer.frag");
 	ew::Shader simpleDepthShader = ew::Shader("assets/simpleDepthShader.vert", "assets/simpleDepthShader.frag");
+	ew::Shader drawingDepthBufferShader = ew::Shader("assets/buffer.vert", "assets/drawingDepthShader.frag"); // Unused debug shader
+	ew::Shader shadowRenderShader = ew::Shader("assets/shadowRender.vert", "assets/shadowRender.frag");
 
 	// Model and Meshes
 	ew::Model monkeyModel = ew::Model("assets/suzanne.obj");
-	ew::Mesh planeMesh = ew::createPlane(10,10,10);
+	ew::Mesh planeMesh = ew::createPlane(5,5,5);
 
 	// Textures
 	GLuint brickTexture = ew::loadTexture("assets/brick_color.jpg");
@@ -93,7 +104,37 @@ int main() {
 	directionalLight.ambient = 0.5f;
 	directionalLight.diffuse = 0.5f;
 	directionalLight.specular = 0.5f;
-	directionalLight.direction = glm::vec3(0, 1, 0);
+	directionalLight.direction = glm::vec3(0.5, 1, 0.5);
+
+	// Animating
+	theClip.duration = 1.0f;
+
+	theClip.positionKeys[0].timestamp = 0.0f;
+	theClip.rotationKeys[0].timestamp = 0.0f;
+	theClip.scaleKeys[0].timestamp = 0.0f;
+	theClip.positionKeys[0].keyFrame = glm::vec3(0.0f, 5.0f, 0.0f);
+	theClip.rotationKeys[0].keyFrame = glm::vec3(0.0f, 90.0f, 0.0f);
+	theClip.scaleKeys[0].keyFrame = glm::vec3(1.0f, 1.0f, 1.0f);
+
+	theClip.positionKeys[1].timestamp = 0.5f;
+	theClip.rotationKeys[1].timestamp = 0.5f;
+	theClip.scaleKeys[1].timestamp = 0.5f;
+	theClip.positionKeys[1].keyFrame = glm::vec3(5.0f, 5.0f, 0.0f);
+	theClip.rotationKeys[1].keyFrame = glm::vec3(90.0f, 90.0f, 0.0f);
+	theClip.scaleKeys[1].keyFrame = glm::vec3(1.0f, 2.0f, 1.0f);
+
+	theClip.positionKeys[2].timestamp = 1.0f;
+	theClip.rotationKeys[2].timestamp = 1.0f;
+	theClip.scaleKeys[2].timestamp = 1.0f;
+	theClip.positionKeys[2].keyFrame = glm::vec3(5.0f, 5.0f, 5.0f);
+	theClip.rotationKeys[2].keyFrame = glm::vec3(90.0f, 90.0f, -90.0f);
+	theClip.scaleKeys[2].keyFrame = glm::vec3(2.0f, 2.0f, 1.0f);
+	animator.clip = theClip;
+	animator.isPlaying = false;
+	animator.isLooping = false;
+	animator.playbackTime = 0.0f;
+	animator.playbackSpeed = 0.001f;
+
 
 	// Post Processing
 	glGenFramebuffers(1, &framebuffer);
@@ -161,19 +202,39 @@ int main() {
 		float time = (float)glfwGetTime();
 		deltaTime = time - prevFrameTime;
 		prevFrameTime = time;
+		glm::vec3 lightDirection = normalize(-directionalLight.direction);
 
+		// Position Updates
+		cameraController.move(window, &camera, deltaTime);
+		monkeyTransform = animator.calcNewFrame();
+
+		glm::vec3 lightPosition = -glm::vec3(lightDirection.x * 3,lightDirection.y * 3, lightDirection.z * 3);
 
 		// SHADOW PASS
-		/*ConfigureShaderAndMatrices();
-		RenderScene();*/
-		float near_plane = 1.0f, far_plane = 7.5f;
-		glm::mat4 lightProjection = glm::ortho(-10.0f, 10.0f, -10.0f, 10.0f, near_plane, far_plane);
-		glm::mat4 lightView = glm::lookAt(glm::vec3(directionalLight.direction),
+		float near_plane = 0.01f, far_plane = 10.0f;
+		glm::mat4 lightProjection = glm::ortho(-3.0f, 3.0f, -3.0f, 3.0f, near_plane, far_plane);
+		glm::mat4 lightView = glm::lookAt(glm::vec3(lightPosition),
 			glm::vec3(0.0f, 0.0f, 0.0f),
 			glm::vec3(0.0f, 1.0f, 0.0f));
 		glm::mat4 lightSpaceMatrix = lightProjection * lightView;
 
 		// TODO :: Finish up here with the shadow pass
+
+		glViewport(0, 0, SHADOW_WIDTH, SHADOW_HEIGHT);
+		glBindFramebuffer(GL_FRAMEBUFFER, depthMapFBO);
+		glClear(GL_DEPTH_BUFFER_BIT);
+		glCullFace(GL_FRONT);
+
+		simpleDepthShader.use();
+		simpleDepthShader.setMat4("_lightSpaceMatrix", lightSpaceMatrix);
+
+		simpleDepthShader.setMat4("_Model", monkeyTransform.modelMatrix());
+		monkeyModel.draw(); //Draws monkey model using current shader
+		simpleDepthShader.setMat4("_Model", planeTransform.modelMatrix());
+		planeMesh.draw(); // Drawing the plane
+
+		glCullFace(GL_BACK);
+		glBindFramebuffer(GL_FRAMEBUFFER, 0);
 		   
 
 		// RENDER PASS
@@ -183,33 +244,54 @@ int main() {
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 		
 		// Lighting
-		glm::vec3 lightDirection = normalize(-directionalLight.direction);
+		
+		/*{
+			// Shader
+			shader.use();
+			shader.setInt("_MainTex", 0);
+			shader.setVec3("_EyePos", camera.position);
+			shader.setFloat("_Material.Ka", material.Ka);
+			shader.setFloat("_Material.Kd", material.Kd);
+			shader.setFloat("_Material.Ks", material.Ks);
+			shader.setFloat("_Material.Shininess", material.Shininess);
+			shader.setVec3("_LightDirection", lightDirection);
 
-		// Shader
-		shader.use();
-		shader.setInt("_MainTex", 0);
-		shader.setVec3("_EyePos", camera.position);
-		shader.setFloat("_Material.Ka", material.Ka);
-		shader.setFloat("_Material.Kd", material.Kd);
-		shader.setFloat("_Material.Ks", material.Ks);
-		shader.setFloat("_Material.Shininess", material.Shininess);
-		shader.setVec3("_LightDirection", lightDirection);
+			// Models
+			glBindTexture(GL_TEXTURE_2D, brickTexture);
+			monkeyTransform.rotation = glm::rotate(monkeyTransform.rotation, deltaTime, glm::vec3(0.0, 1.0, 0.0));
+			shader.setMat4("_Model", monkeyTransform.modelMatrix());
+			shader.setMat4("_ViewProjection", camera.projectionMatrix() * camera.viewMatrix());
+			monkeyModel.draw(); //Draws monkey model using current shader
+
+			shader.setMat4("_Model", planeTransform.modelMatrix());
+			shader.setMat4("_ViewProjection", camera.projectionMatrix() * camera.viewMatrix());
+			planeMesh.draw(); // Drawing the plane
+		}*/
+		// ^ Old render code
+
+		
+		shadowRenderShader.use();
+		shadowRenderShader.setMat4("projection", camera.projectionMatrix());
+		shadowRenderShader.setMat4("view", camera.viewMatrix());
+		shadowRenderShader.setMat4("lightSpaceMatrix", lightSpaceMatrix);
+		shadowRenderShader.setVec3("lightPos", lightPosition);
+		shadowRenderShader.setVec3("lightPos", camera.position);
+		shadowRenderShader.setFloat("bias", bias);
+		glActiveTexture(GL_TEXTURE0);
+		glBindTexture(GL_TEXTURE_2D, brickTexture);
+		glActiveTexture(GL_TEXTURE1);
+		glBindTexture(GL_TEXTURE_2D, depthMap);
+		shadowRenderShader.setInt("diffuseTexture", 0);
+		shadowRenderShader.setInt("shadowMap", 1);
+
+		
 
 		// Models
-		glBindTexture(GL_TEXTURE_2D, brickTexture);
-		monkeyTransform.rotation = glm::rotate(monkeyTransform.rotation, deltaTime, glm::vec3(0.0, 1.0, 0.0));
-		shader.setMat4("_Model", monkeyTransform.modelMatrix());
-		cameraController.move(window, &camera, deltaTime);
-		shader.setMat4("_ViewProjection", camera.projectionMatrix() * camera.viewMatrix());
+		shadowRenderShader.setMat4("model", monkeyTransform.modelMatrix());
 		monkeyModel.draw(); //Draws monkey model using current shader
-
-		shader.setMat4("_Model", planeTransform.modelMatrix());
-		shader.setMat4("_ViewProjection", camera.projectionMatrix() * camera.viewMatrix());
+		shadowRenderShader.setMat4("model", planeTransform.modelMatrix());
 		planeMesh.draw(); // Drawing the plane
-		
 
-
-		
 
 		glfwSwapBuffers(window);
 
@@ -230,6 +312,8 @@ int main() {
 		}
 		
 		glBindTextureUnit(0, textureColorbuffer);
+
+
 		glBindVertexArray(vao);
 		glDrawArrays(GL_TRIANGLES, 0, 6); //6 for quad, 3 for triangle
 
@@ -285,7 +369,42 @@ void drawUI() {
 			ImGui::SliderFloat("Specular", &directionalLight.specular, 0.0f, 1.0f);
 		}*/
 	}
+	ImGui::SliderFloat("Bias", &bias, 0.0f, 1.0f);
 	
+
+	if (ImGui::CollapsingHeader("Animation Controls")) {
+		
+		ImGui::Checkbox("Animating", &animator.isPlaying);
+		ImGui::Checkbox("Loop", &animator.isLooping);
+		ImGui::DragFloat("Playback Speed", &animator.playbackSpeed, 0.0001f);
+		ImGui::DragFloat("Playback Duration", &animator.clip.duration, 0.1f);
+		ImGui::SliderFloat("Playback Time", &animator.playbackTime, 0.0001f, animator.clip.duration);
+		
+		if (ImGui::CollapsingHeader("Position Keyframes")) {
+			ImGui::SliderFloat("Timestamp PosFrame1", &animator.clip.positionKeys[0].timestamp, 0.001f, animator.clip.duration);
+			ImGui::DragFloat3("Value PosFrame1", &animator.clip.positionKeys[0].keyFrame.x, 0.1f);
+			ImGui::SliderFloat("Timestamp PosFrame2", &animator.clip.positionKeys[1].timestamp, 0.001f, animator.clip.duration);
+			ImGui::DragFloat3("Value PosFrame2", &animator.clip.positionKeys[1].keyFrame.x, 0.1f);
+			ImGui::SliderFloat("Timestamp PosFrame3", &animator.clip.positionKeys[2].timestamp, 0.001f, animator.clip.duration);
+			ImGui::DragFloat3("Value PosFrame3", &animator.clip.positionKeys[2].keyFrame.x, 0.1f);
+		}
+		if (ImGui::CollapsingHeader("Rotation Keyframes")) {
+			ImGui::SliderFloat("Timestamp RotFrame1", &animator.clip.rotationKeys[0].timestamp, 0.001f, animator.clip.duration);
+			ImGui::DragFloat3("Value RotFrame1", &animator.clip.rotationKeys[0].keyFrame.x, 0.1f);
+			ImGui::SliderFloat("Timestamp RotFrame2", &animator.clip.rotationKeys[1].timestamp, 0.001f, animator.clip.duration);
+			ImGui::DragFloat3("Value RotFrame2", &animator.clip.rotationKeys[1].keyFrame.x, 0.1f);
+			ImGui::SliderFloat("Timestamp RotFrame3", &animator.clip.rotationKeys[2].timestamp, 0.001f, animator.clip.duration);
+			ImGui::DragFloat3("Value RotFrame3", &animator.clip.rotationKeys[2].keyFrame.x, 0.1f);
+		}
+		if (ImGui::CollapsingHeader("Scale Keyframes")) {
+			ImGui::SliderFloat("Timestamp ScaFrame1", &animator.clip.scaleKeys[0].timestamp, 0.001f, animator.clip.duration);
+			ImGui::DragFloat3("Value ScaFrame1", &animator.clip.scaleKeys[0].keyFrame.x, 0.1f);
+			ImGui::SliderFloat("Timestamp ScaFrame2", &animator.clip.scaleKeys[1].timestamp, 0.001f, animator.clip.duration);
+			ImGui::DragFloat3("Value ScaFrame2", &animator.clip.scaleKeys[1].keyFrame.x, 0.1f);
+			ImGui::SliderFloat("Timestamp ScaFrame3", &animator.clip.scaleKeys[2].timestamp, 0.001f, animator.clip.duration);
+			ImGui::DragFloat3("Value ScaFrame3", &animator.clip.scaleKeys[2].keyFrame.x, 0.1f);
+		}
+	}
 
 
 	ImGui::Text("Add Controls Here!");
@@ -298,7 +417,7 @@ void drawUI() {
 	ImVec2 windowSize = ImGui::GetWindowSize();
 	//Invert 0-1 V to flip vertically for ImGui display
 	//shadowMap is the texture2D handle
-	//ImGui::Image((ImTextureID)shadowMap, windowSize, ImVec2(0, 1), ImVec2(1, 0));
+	ImGui::Image((ImTextureID)depthMap, windowSize, ImVec2(0, 1), ImVec2(1, 0));
 	ImGui::EndChild();
 	ImGui::End();
 
