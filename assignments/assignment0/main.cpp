@@ -333,6 +333,7 @@ void drawUI() {
 	ImGui_ImplOpenGL3_NewFrame();
 	ImGui::NewFrame();
 
+	/*
 	ImGui::Begin("Settings");
 	if (ImGui::Button("Reset Camera")) {
 		resetCamera(&camera, &cameraController);
@@ -363,11 +364,6 @@ void drawUI() {
 			ImGui::SliderFloat("Y component", &directionalLight.direction.y, -1.0f, 1.0f);
 			ImGui::SliderFloat("Z component", &directionalLight.direction.z, -1.0f, 1.0f);
 		}
-		/*if (ImGui::CollapsingHeader("Light Data")) {
-			ImGui::SliderFloat("Ambient", &directionalLight.ambient, 0.0f, 1.0f);
-			ImGui::SliderFloat("Diffuse", &directionalLight.diffuse, 0.0f, 1.0f);
-			ImGui::SliderFloat("Specular", &directionalLight.specular, 0.0f, 1.0f);
-		}*/
 	}
 	ImGui::SliderFloat("Bias", &bias, 0.0f, 1.0f);
 	
@@ -406,10 +402,12 @@ void drawUI() {
 		}
 	}
 
-
 	ImGui::Text("Add Controls Here!");
 	ImGui::End();
 
+	*/
+
+	/*
 	ImGui::Begin("Shadow Map");
 	//Using a Child allow to fill all the space of the window.
 	ImGui::BeginChild("Shadow Map");
@@ -420,7 +418,11 @@ void drawUI() {
 	ImGui::Image((ImTextureID)depthMap, windowSize, ImVec2(0, 1), ImVec2(1, 0));
 	ImGui::EndChild();
 	ImGui::End();
+	*/
 
+	// New settings menu goes here
+	ImGui::Begin("Hierarchy Control");
+	ImGui::End();
 
 	ImGui::Render();
 	ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
