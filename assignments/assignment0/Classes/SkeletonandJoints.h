@@ -23,16 +23,16 @@ namespace ec
 	
 	class Skeleton {
 	public:
-		Skeleton() {};
-		//Skeleton(const MeshData& meshData);
+		Skeleton();
 		std::vector<ew::Transform> CalcChildrenPos();
-		
+
+		Joint mTorso;
+		Joint mShoulder;
+		Joint mElbow;
+		Joint mWrist;
 
 	private:
-		Joint* mTorso = new Joint;
-		Joint* mShoulder = new Joint;
-		Joint* mElbow = new Joint;
-		Joint* mWrist = new Joint;
+		
 	};
 
 

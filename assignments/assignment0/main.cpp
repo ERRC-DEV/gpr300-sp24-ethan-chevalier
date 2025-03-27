@@ -17,6 +17,7 @@
 
 #include "Classes/Animator.h"
 #include "Classes/AnimationClip.h"
+#include "Classes/SkeletonandJoints.h"
 
 #include <iostream>
 
@@ -72,6 +73,8 @@ float bias = 0.1;
 ec::Animator animator;
 ec::AnimationClip theClip;
 
+// Skeleton
+ec::Skeleton theSkeleton;
 
 int main() {
 	GLFWwindow* window = initWindow("Assignment 0", screenWidth, screenHeight);
@@ -287,8 +290,18 @@ int main() {
 		
 
 		// Models
-		shadowRenderShader.setMat4("model", monkeyTransform.modelMatrix());
-		monkeyModel.draw(); //Draws monkey model using current shader
+		//shadowRenderShader.setMat4("model", monkeyTransform.modelMatrix());
+		//monkeyModel.draw(); //Draws monkey model using current shader
+
+		std::vector<ew::Transform> transforms = theSkeleton.CalcChildrenPos();
+		shadowRenderShader.setMat4("model", transforms[0].modelMatrix());
+		monkeyModel.draw();
+		shadowRenderShader.setMat4("model", transforms[1].modelMatrix());
+		monkeyModel.draw();
+		shadowRenderShader.setMat4("model", transforms[2].modelMatrix());
+		monkeyModel.draw();
+		shadowRenderShader.setMat4("model", transforms[3].modelMatrix());
+		monkeyModel.draw();
 		shadowRenderShader.setMat4("model", planeTransform.modelMatrix());
 		planeMesh.draw(); // Drawing the plane
 
@@ -422,6 +435,26 @@ void drawUI() {
 
 	// New settings menu goes here
 	ImGui::Begin("Hierarchy Control");
+	if (ImGui::CollapsingHeader("Torso")) {
+		ImGui::DragFloat3("Torso Position", &theSkeleton.mTorso.position.x, 0.01f);
+		ImGui::DragFloat3("Torso Rotation", &theSkeleton.mTorso.eulerRotation.x, 1.0f);
+		ImGui::DragFloat3("Torso Scale", &theSkeleton.mTorso.scale.x, 0.01f);
+	}
+	if (ImGui::CollapsingHeader("Shoulder")) {
+		ImGui::DragFloat3("Shoulder Position", &theSkeleton.mShoulder.position.x, 0.01f);
+		ImGui::DragFloat3("Shoulder Rotation", &theSkeleton.mShoulder.eulerRotation.x, 1.0f);
+		ImGui::DragFloat3("Shoulder Scale", &theSkeleton.mShoulder.scale.x, 0.01f);
+	}
+	if (ImGui::CollapsingHeader("Elbow")) {
+		ImGui::DragFloat3("Elbow Position", &theSkeleton.mElbow.position.x, 0.01f);
+		ImGui::DragFloat3("Elbow Rotation", &theSkeleton.mElbow.eulerRotation.x, 1.0f);
+		ImGui::DragFloat3("Elbow Scale", &theSkeleton.mElbow.scale.x, 0.01f);
+	}
+	if (ImGui::CollapsingHeader("Wrist")) {
+		ImGui::DragFloat3("Wrist Position", &theSkeleton.mWrist.position.x, 0.01f);
+		ImGui::DragFloat3("Wrist Rotation", &theSkeleton.mWrist.eulerRotation.x, 1.0f);
+		ImGui::DragFloat3("Wrist Scale", &theSkeleton.mWrist.scale.x, 0.01f);
+	}
 	ImGui::End();
 
 	ImGui::Render();
